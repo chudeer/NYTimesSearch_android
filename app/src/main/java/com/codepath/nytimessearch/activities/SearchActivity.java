@@ -1,9 +1,9 @@
 package com.codepath.nytimessearch.activities;
 
+import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
+import android.support.v4.app.FragmentManager;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.util.Log;
@@ -12,13 +12,17 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.AdapterView;
 import android.widget.Button;
+import android.widget.DatePicker;
 import android.widget.EditText;
 import android.widget.GridView;
 import android.widget.Toast;
 
-import com.codepath.nytimessearch.Article;
-import com.codepath.nytimessearch.ArticleArrayAdapter;
+import com.codepath.nytimessearch.fragments.SelectDateFragment;
+import com.codepath.nytimessearch.fragments.SettingsFragment;
+import com.codepath.nytimessearch.models.Article;
+import com.codepath.nytimessearch.adapters.ArticleArrayAdapter;
 import com.codepath.nytimessearch.R;
+import com.codepath.nytimessearch.models.Filter;
 import com.loopj.android.http.AsyncHttpClient;
 import com.loopj.android.http.JsonHttpResponseHandler;
 import com.loopj.android.http.RequestParams;
@@ -31,56 +35,46 @@ import java.util.ArrayList;
 
 import cz.msebera.android.httpclient.Header;
 
-public class SearchActivity extends AppCompatActivity {
+public class SearchActivity extends AppCompatActivity implements SettingsFragment.FilterItemDialogListener, DatePickerDialog.OnDateSetListener{
+
     EditText etQuery;
+    GridView gvResult;
     Button btnSearch;
-    GridView gvResults;
     ArrayList<Article> articles;
     ArticleArrayAdapter adapter;
-
-
+    Filter filter;
+    String query;
+    SettingsFragment filterItemDialogFragment;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_search);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
-        /*
-        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
-        fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
-            }
-        });
-        */
         setupViews();
-
+        Log.d("Debug", "onCreate");
     }
+
     public void setupViews(){
         etQuery = (EditText) findViewById(R.id.etQuery);
+        gvResult = (GridView) findViewById(R.id.gvResult);
         btnSearch = (Button) findViewById(R.id.btnSearch);
-        gvResults =(GridView) findViewById(R.id.gvResults);
         articles = new ArrayList<Article>();
-        adapter =new ArticleArrayAdapter(this, articles);
-        gvResults.setAdapter(adapter);
-        //hook up listener from grid view
-        gvResults.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        adapter = new ArticleArrayAdapter(this, articles);
+        gvResult.setAdapter(adapter);
 
+        //hook up listener for grid click
+        gvResult.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                //create an intent to display the article
-                Intent i =new Intent(getApplicationContext(),ArticleActivity.class);
+            public void onItemClick(AdapterView<?> adapterView, View view, int pos, long l) {
+                // create an intent to display the article
+                Intent intent = new Intent(getApplicationContext(), ArticleActivity.class);
                 //get the article to display
-                Article article= articles.get(position);
-                //pass in that intent to activity
-                //i.putExtra("url",article.getWebUrl());
-                i.putExtra("article",article);
+                Article article = articles.get(pos);
+                //pass in that article into intent
+                intent.putExtra("article", article);
                 //launch the activity
-                startActivity(i);
-
-
+                startActivity(intent);
             }
         });
     }
@@ -100,43 +94,87 @@ public class SearchActivity extends AppCompatActivity {
         int id = item.getItemId();
 
         //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
+        if (id == R.id.action_filter) {
             return true;
         }
-
+        else if(id == R.id.action_settings){
+//            Intent i = new Intent(getApplicationContext(), );
+//
+           // startActivity(i);
+        }
         return super.onOptionsItemSelected(item);
     }
+    public void onFilterClick(MenuItem men){
+        FragmentManager fm = getSupportFragmentManager();
+        filterItemDialogFragment = SettingsFragment.newInstance(filter);
+        // SETS the target fragment for use later when sending results
+        filterItemDialogFragment.show(fm, "fragment_filter_item");
 
+    }
+    public void onCalendarClick(){
+        SelectDateFragment newFragment = new SelectDateFragment();
+        newFragment.show(getSupportFragmentManager(), "datePicker");
+    }
     public void onArticleSearch(View view) {
-        String query = etQuery.getText().toString();
-        //Toast.makeText(this,"search for "+query,Toast.LENGTH_SHORT).show();
-
+        query = etQuery.getText().toString();
+        queryNews(0);
+        queryNews(1);
+    }
+    public void queryNews(int page){
         AsyncHttpClient client = new AsyncHttpClient();
-        String url="http://api.nytimes.com/svc/search/v2/articlesearch.json";
-        //?api-key=b59a1fa48d6644ab84a10fe577c82689
-        RequestParams params = new RequestParams();
-        params.put("api-key","b59a1fa48d6644ab84a10fe577c82689");
-        params.put("pages",0);
-        params.put("q",query);
+        String url = "https://api.nytimes.com/svc/search/v2/articlesearch.json";
 
+        RequestParams params = new RequestParams();
+        params.put("api-key", "140f0f5ccb674bad857b3dee07015f74");
+        params.put("page",page);
+        params.put("q", query);
+        if(filter != null){
+            if(!filter.get_beginDate().equals("")){
+                params.put("begin_date", filter.get_beginDate());
+            }
+            params.put("sort", filter.get_sortingOrder());
+            if (filter.get_newsType() != ""){
+                params.put("fq", "news_desk:(" +filter.get_newsType()+ ")");
+            }
+        }
+        Log.d("Debug", params.toString());
         client.get(url, params, new JsonHttpResponseHandler(){
             @Override
             public void onSuccess(int statusCode, Header[] headers, JSONObject response) {
-                super.onSuccess(statusCode, headers, response);
-                //Log.d("DEBUG",response.toString());
+                Log.d("Debug", response.toString());
                 JSONArray articleJsonResults = null;
                 try{
                     articleJsonResults = response.getJSONObject("response").getJSONArray("docs");
-                    //Log.d("DEBUG",response.toString());
-                    //articles.addAll(Article.fromJSONArray(articleJsonResults));
-                    //Log.d("articleJsonResults",articles.toString());
-                    //adapter.notifyDataSetChanged();
-                    adapter.addAll(Article.fromJSONArray(articleJsonResults));
+                    adapter.addAll(Article.fromJsonArray(articleJsonResults));
+                    Log.d("Debug", articles.toString());
                 }catch (JSONException e){
                     e.printStackTrace();
-
                 }
             }
+
+            @Override
+            public void onFailure (int statusCode, Header[] headers,Throwable t, JSONObject response){
+                Log.e("statusCode", Integer.toString(statusCode));
+                Log.e("headers", headers.toString());
+                Log.e("response", response.toString());
+                Toast toast = Toast.makeText(getApplicationContext(), "Error", Toast.LENGTH_SHORT);
+            }
+
         });
+    }
+    @Override
+    public void onFinishFilterDialog(Filter savedFilter){
+        filter = savedFilter;
+    }
+
+    // handle the date selected
+    @Override
+    public void onDateSet(DatePicker view, int year, int monthOfYear, int dayOfMonth) {
+        // store the values selected into a Calendar instance
+
+        if(filterItemDialogFragment != null){
+            String day = dayOfMonth >= 10 ? Integer.toString(dayOfMonth) : "0" + Integer.toString(dayOfMonth);
+            filterItemDialogFragment.updateSelectedDate(Integer.toString(year) + "/" + Integer.toString(monthOfYear+1) + "/" + day);
+        }
     }
 }
